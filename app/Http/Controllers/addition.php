@@ -17,7 +17,7 @@ class addition extends Controller
         return view('Rechercher',compact('client','COUNT'));
     }
 
-    public function Rechercher_post(Request $request)
+   public function Rechercher_post(Request $request)
     {
   $client = pessage::pluck('Nom_client')->unique();
   $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
@@ -40,12 +40,12 @@ $resultats = pessage::whereBetween('Date', [
     $resultats = pessage::whereBetween('Date', [
     $request->input('date_debut'),
     $request->input('date_fin')
- ])->where('type','sorti')->get();
+ ])->where('type','entree')->get();
 
  $Total = pessage::whereBetween('Date', [
     $request->input('date_debut'),
     $request->input('date_fin')
- ])->where('type','sorti')->sum('Poids_net');
+ ])->where('type','entree')->sum('Poids_net');
 }
 
 
@@ -54,11 +54,17 @@ $resultats = pessage::whereBetween('Date', [
 
 
 
-  function Bar_chart(){
-    $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
+    
+    
+    
+
+  function Bar_chart(Request $request){
+      $annee = $request->input('annee', date('Y'));
+      $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
 
 //barchart
-  $data = pessage::where('type','sorti')
+  $data = pessage::where('type','entree')
+       ->whereYear('Date', $annee)
     ->selectRaw('DISTINCT DATE_FORMAT(Date, "%M") as month') // Sélectionner le mois en lettres
     ->pluck('month'); // Récupérer les mois    $pessage_bar = [];
     $mont_bar=[];
@@ -68,25 +74,18 @@ $resultats = pessage::whereBetween('Date', [
  $clients=[];
 
 foreach($mont_bar as $mont){
-    $pessage_bar[] = pessage::where('type', 'sorti')
+    $pessage_bar[] = pessage::where('type', 'entree')
+         ->whereYear('Date', $annee)
     ->whereRaw('DATE_FORMAT(Date, "%M") = ?', [$mont]) // Comparer le mois en lettres
     ->sum('Poids_net');
 
 }
 
 
-    $chauffeur=[];
-    $pessages=pessage::where('type','sorti')->pluck('Nom_conducteur')->unique();
-    foreach($pessages as $pessage ){
-        $chauffeur[]=$pessage;
-    }
-    $countchauffeur=[];
-    foreach($chauffeur as $chauff){
-      $countchauffeur[]=pessage::where('Nom_conducteur',$chauff)->where('type','sorti')->count();
-    }
+
 
   //bar client
- $data_clients= pessage::where('type', 'sorti')->distinct()->pluck('Nom_client');
+ $data_clients= pessage::where('type', 'entree')->distinct()->pluck('Nom_client');
   $client_month=[];
   $count_client=[];
 foreach($data_clients as $data){
@@ -94,25 +93,25 @@ $clients[]=$data;
 }
 $poid_net=[];
 foreach($clients as $client){
-    $client_months= pessage::
-     where('type', 'sorti')
+     $client_months= pessage::
+     where('type', 'entree')
     ->selectRaw('DISTINCT DATE_FORMAT(Date, "%M") as month') // Sélectionner uniquement le mois
+    ->whereYear('Date', $annee)
     ->pluck('month');
-
-
 }
-$cliets = Pessage::selectRaw('DISTINCT Nom_client, MONTHNAME(Date) as Mois')
-    ->where('type', 'sorti')
+$cliets = pessage::selectRaw('DISTINCT Nom_client, MONTHNAME(Date) as Mois')
+    ->where('type', 'entree')
     ->get()
-    ->groupBy('Nom_client');  // Groupement par nom de client
+    ->groupBy('Nom_client');
 
 $data = [];
 foreach ($cliets as $clientName => $datas) {
     foreach ($datas as $group) {
         $data[$clientName][] = [
             'Mois' => $group->Mois,
-            'Poid' => Pessage::where('type', 'sorti')
+            'Poid' => pessage::where('type', 'entree')
                 ->where('Nom_client', $clientName)
+                ->whereYear('Date', $annee)
                 ->whereRaw('DATE_FORMAT(Date, "%M") = ?', [$group->Mois])
                 ->sum('Poids_net'),
             'clientNom' => $clientName
@@ -120,13 +119,77 @@ foreach ($cliets as $clientName => $datas) {
     }
 }
 
+
+ //Chauffeur
+$chauffeurs = pessage::selectRaw('DISTINCT Nom_conducteur, MONTHNAME(Date) as Mois')
+    ->where('type', 'entree')
+    ->get()
+    ->groupBy('Nom_conducteur');
+
+
+    $chauffeur=[];
+    $pessages=pessage::where('type','entree')->pluck('Nom_conducteur')->unique();
+    foreach($pessages as $pessage ){
+        $chauffeur[]=$pessage;
+    }
+    $countchauffeur=[];
+    foreach($chauffeur as $chauff){
+      $countchauffeur[]=pessage::where('Nom_conducteur',$chauff)->where('type','entree')->count();
+    }
+$DATAchauffeur=[];
+foreach ($chauffeurs as $chauf => $datas) {
+    foreach ($datas as $group) {
+        $DATAchauffeur[$chauf][] = [
+            'Mois' => $group->Mois,
+            'voyage' => Pessage::where('type', 'entree')
+                ->where('Nom_conducteur', $chauf)
+                ->whereRaw('DATE_FORMAT(Date, "%M") = ?', [$group->Mois])
+                ->whereYear('Date', $annee)
+                ->count(),
+                'chauf' => $chauf];
+    }
+}
+
 foreach($client_months as $months){
 $client_month[]=$months;
 }
 
-return view('BartChart', compact('pessage_bar','mont_bar','chauffeur','countchauffeur','clients','count_client','client_month','poid_net','data','COUNT'));
+ //Resume
+ $POIDS_TOTAL = pessage::where('type', 'entree')->whereYear('Date', $annee)
+->sum('Poids_net') / 1000;
+
+$Livraision=pessage::where('type', 'entree')->whereYear('Date', $annee)
+                ->count();
+
+$Nbr_clie = pessage::where('Nom_client', '!=', 'null')
+->distinct('Nom_client')
+->count('Nom_client');
+
+
+return view('BartChart', compact('pessage_bar'
+,'mont_bar'
+,'chauffeur'
+,'countchauffeur'
+,'clients'
+,'count_client'
+,'client_month'
+,'poid_net'
+,'data'
+,'COUNT'
+,'DATAchauffeur',
+'POIDS_TOTAL',
+'Livraision',
+'Nbr_clie'
+));
   }
 
+    
+    
+    
+    
+    
+    
+    
 function stock(){
     $pessages=pessage::where('type', 'stock')->orderBy('created_at', 'desc')->get();
     $Nom_client=pessage::where('type','sorti')->distinct()->pluck('Nom_client');
@@ -188,18 +251,7 @@ function Stockaffiche($id){
     $pessages=pessage::where('pessageID',$id)->get();
 return view('AfficheStock',compact('pessages'));
 }
-    public function mont()
-        {
-            $pessagesmonths = pessage::pluck('Date')->map(function ($date) {
-                return Carbon::parse($date)->translatedFormat('F'); // Affiche le mois en français
-            })->unique();
-             $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
-
-            return view('stockmonth',compact('COUNT','pessagesmonths'));
-
-
-        }
-        public function montpost(Request $request){
+  public function montpost(Request $request){
             $mois = $request->input('mois');
             $pessagesmonths = pessage::pluck('Date')->map(function ($date) {
                 return Carbon::parse($date)->translatedFormat('F'); // Affiche le mois en français
@@ -208,7 +260,7 @@ return view('AfficheStock',compact('pessages'));
 
 
             if($mois ==="ALL"){
-                $pessages = Pessage::where('type', 'stock')
+                $pessages = Pessage::where('type', 'stock')->whereYear('Date', $request->input('annee'))
                ->get();
 
                $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
@@ -218,11 +270,69 @@ return view('AfficheStock',compact('pessages'));
             $moisNumero = Carbon::parse("1 $mois")->month;
             $pessages = Pessage::where('type', 'stock')
                 ->whereMonth('Date', $moisNumero)
-               ->get();
+                ->whereYear('Date', $request->input('annee'))
+                ->get();
 
                $COUNT=pessage::where('type','stock')->where('Nom_client','null')->whereMonth('Date', $moisNumero)->count();
 
             return view('stock',compact('pessages','Nom_client','COUNT','pessagesmonths'));
 
         }
+           public function filtreAFFICHAGE(Request $request, $id)
+{
+    $mois = $request->input('mois');
+    $Nom_client = $id;
+
+    // Récupération des mois pour le select
+    $pessagesmonths = pessage::where('Nom_client', $Nom_client)
+        ->where('type', 'sorti')
+        ->selectRaw('MONTH(Date) as mois')
+        ->distinct()
+        ->orderBy('mois')
+        ->pluck('mois')
+        ->map(function ($mois) {
+            return [
+                'value' => $mois,
+                'nom' => ucfirst(
+                    Carbon::create()->month($mois)
+                        ->locale('fr')
+                        ->translatedFormat('F')
+                ),
+            ];
+        });
+
+
+    if ($mois === "ALL") {
+
+        $pessages = Pessage::where('type', 'entree')
+            ->where('Nom_client', $id)
+            ->whereYear('Date', $request->input('annee'))
+            ->get();
+
+        $COUNT = pessage::where('type', 'entree')
+            ->whereNull('Nom_client')
+            ->count();
+
+    } else {
+
+        $pessages = Pessage::where('type', 'entree')
+            ->where('Nom_client', $id)
+            ->whereMonth('Date', $mois)
+            ->whereYear('Date', $request->input('annee'))
+            ->get();
+
+        $COUNT = pessage::where('type', 'stock')
+            ->whereNull('Nom_client')
+            ->whereMonth('Date', $mois)
+            ->count();
+    }
+
+
+    return view('vueform', compact(
+        'pessages',
+        'COUNT',
+        'pessagesmonths',
+        'Nom_client'
+    ));
+}
 }
