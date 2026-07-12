@@ -9,7 +9,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Notifications\passwordforget;
-
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 class bulk extends Controller
 {
     public function login_get()
@@ -187,8 +188,25 @@ class bulk extends Controller
 
            $pessages=pessage::where('Nom_client', $request->input('Nom_client'))->where('type', 'sorti')->get();
            $COUNT=pessage::where('type','stock')->where('Nom_client','null')->count();
+           $Nom_client=$request->input('Nom_client');
+ $pessagesmonths = pessage::where('Nom_client', $Nom_client)
+    ->where('type', 'sorti')
+    ->selectRaw('MONTH(Date) as mois')
+    ->distinct()
+    ->orderBy('mois')
+    ->pluck('mois')
+    ->map(function ($mois) {
+        return [
+            'value' => $mois,
+            'nom' => ucfirst(
+                Carbon::create()->month($mois)
+                    ->locale('fr')
+                    ->translatedFormat('F')
+            ),
+        ];
+    });
 
-            return view('vueform',compact('pessages','COUNT'));
+            return view('vueform',compact('pessages','COUNT','Nom_client','pessagesmonths'));
 
     }
 
@@ -397,4 +415,3 @@ class bulk extends Controller
 
 
 }
-
